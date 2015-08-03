@@ -26,6 +26,7 @@ extern "C" bool beacon_event_callback_to_java(beacon_info * info);
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     theVM = vm;
     printf("JNI_OnLoad, requesting JNI_VERSION_1_8\n");
+    fflush(stdout);
     return JNI_VERSION_1_8;
 }
 
@@ -47,10 +48,12 @@ static void attachToJavaVM() {
     }
 }
 
+
 /**
  * Simple test event generator function to validate callback into java
  */
-static void eventGenerator() {
+static void eventGenerator(int count) {
+    printf("begin native eventGenerator\n");
     attachToJavaVM();
     beacon_info info;
     // Initialize common data
@@ -63,12 +66,16 @@ static void eventGenerator() {
     info.minor = 11111;
     info.power = -48;
     info.rssi = -50;
-    for(int n = 0; n < 100; n ++) {
+    std::chrono::nanoseconds sleepTime();
+    for(int n = 0; n < count; n ++) {
         chrono::milliseconds now = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch());
         info.count ++;
         info.time = now.count();
         beacon_event_callback_to_java(&info);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+    printf("end native eventGenerator\n");
+    fflush(stdout);
 }
 
 // Flag to cause wait loop for debugger to attach to the java process
@@ -84,39 +91,36 @@ static void runScanner(int device) {
     while(waiting)
         this_thread::yield();
     scan_frames(device, beacon_event_callback_to_java);
+
 }
 
 JNIEXPORT void JNICALL Java_org_jboss_rhiot_beacon_bluez_HCIDump_allocScanner
 (JNIEnv *env, jclass clazz, jobject bb, jint device) {
-    printf("begin Java_org_jboss_rhiot_beacon_bluez_HCIDump_allocScanner(%x,%x,%x)\n", env, clazz, bb);
+    printf("begin Java_org_jboss_rhiot_beacon_bluez_HCIDump_allocScanner(%p,%p,%p)\n", env, clazz, bb);
     // Create global references to the ByteBuffer and HCIDump class for use in other native threads
     byteBufferObj = (jobject) env->NewGlobalRef(bb);
     hcidumpClass = (jclass) env->NewGlobalRef(clazz);
     eventNotification = env->GetStaticMethodID(hcidumpClass, "eventNotification", "()Z");
     if(eventNotification == nullptr) {
-        fprintf(stderr, "Failed to lookup eventNotification()Z on: jclass=%s", clazz);
+        fprintf(stderr, "Failed to lookup eventNotification()Z on: jclass=%p", clazz);
         exit(1);
     }
-    printf("Found eventNotification=%x\n", eventNotification);
+    printf("Found eventNotification=%p\n", eventNotification);
 
-    thread::id tid;
-#if 0
     // Simple test thread
-    thread t(eventGenerator, device);
-#else
-    // Run the scanner
-    thread t(runScanner, device);
-#endif
-    tid = t.get_id();
+    thread t(eventGenerator, 1000);
     t.detach();
-    printf("end Java_org_jboss_rhiot_beacon_bluez_HCIDump_allocScanner, tid=%x, hcidumpClassRef=%x, eventNotification=%x\n", tid, hcidumpClass, eventNotification);
+    printf("end Java_org_jboss_rhiot_beacon_bluez_HCIDump_allocScanner, tid=%p, hcidumpClassRef=%p, eventNotification=%p\n", t.get_id(), hcidumpClass, eventNotification);
+    fflush(stdout);
 }
 
 JNIEXPORT void JNICALL Java_org_jboss_rhiot_beacon_bluez_HCIDump_freeScanner
         (JNIEnv *env, jclass clazz) {
-    printf("begin Java_org_jboss_rhiot_beacon_bluez_HCIDump_freeScanner(%x,%x)\n", env, clazz);
+    printf("begin Java_org_jboss_rhiot_beacon_bluez_HCIDump_freeScanner(%p,%p)\n", env, clazz);
     javaEnv->DeleteGlobalRef(hcidumpClass);
     javaEnv->DeleteGlobalRef(byteBufferObj);
+    printf("end Java_org_jboss_rhiot_beacon_bluez_HCIDump_freeScanner(%p,%p)\n", env, clazz);
+    fflush(stdout);
 }
 
 /**
